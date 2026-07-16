@@ -21,12 +21,25 @@ class AuthProvider extends ChangeNotifier {
   User? _user;
   String? _error;
   bool _busy = false;
+  bool _rememberMe = true;
+  bool _deviceLockAvailable = false;
 
   AuthStatus get status => _status;
   User? get user => _user;
   String? get error => _error;
   bool get isBusy => _busy;
   bool get isAuthenticated => _status == AuthStatus.authenticated;
+  bool get rememberMe => _rememberMe;
+
+  /// True only when the phone supports a lock *and* there is a remembered
+  /// session to unlock. The device-unlock button hides otherwise, since it
+  /// would have nothing to restore.
+  bool get deviceLockAvailable => _deviceLockAvailable;
+
+  void setRememberMe({required bool value}) {
+    _rememberMe = value;
+    notifyListeners();
+  }
 
   /// Called once from the splash screen.
   Future<void> bootstrap() async {
@@ -34,23 +47,85 @@ class AuthProvider extends ChangeNotifier {
     _user = restored;
     _status =
         restored == null ? AuthStatus.unauthenticated : AuthStatus.authenticated;
+    await refreshDeviceLockAvailability();
+    notifyListeners();
+  }
+
+  Future<void> refreshDeviceLockAvailability() async {
+    _deviceLockAvailable = await _service.canUseDeviceAuth() &&
+        await _service.hasUnlockableSession();
     notifyListeners();
   }
 
   Future<bool> login({required String email, required String password}) async {
+    return _run(() => _service.login(
+          email: email,
+          password: password,
+          rememberMe: _rememberMe,
+        ));
+  }
+
+  Future<bool> register({
+    required String name,
+    required String email,
+    required String phone,
+    required String password,
+  }) async {
+    return _run(() => _service.register(
+          name: name,
+          email: email,
+          phone: phone,
+          password: password,
+        ));
+  }
+
+  /// Fingerprint / face, falling back to the device PIN, pattern or password.
+  Future<bool> signInWithDeviceLock() async {
     _busy = true;
     _error = null;
     notifyListeners();
 
     try {
-      _user = await _service.login(email: email, password: password);
+      final result = await _service.signInWithDeviceLock();
+      if (result == DeviceAuthResult.success) {
+        _user = _service.currentUser;
+        _status = AuthStatus.authenticated;
+        return true;
+      }
+
+      _error = switch (result) {
+        // Dismissing the prompt is a deliberate choice, not an error to shout
+        // about.
+        DeviceAuthResult.cancelled => null,
+        DeviceAuthResult.noCredentialsSet =>
+          'Set a screen lock on your phone to use this.',
+        DeviceAuthResult.noSavedSession =>
+          'Sign in with your password once first.',
+        DeviceAuthResult.unavailable =>
+          'Device unlock is unavailable right now.',
+        DeviceAuthResult.success => null,
+      };
+      return false;
+    } finally {
+      _busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> _run(Future<User> Function() action) async {
+    _busy = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      _user = await action();
       _status = AuthStatus.authenticated;
       return true;
     } on ApiException catch (e) {
       _error = e.isUnauthorized ? 'Incorrect email or password.' : e.message;
       return false;
     } on UnimplementedError {
-      _error = 'Login is not connected to the backend yet.';
+      _error = 'This is not connected to the backend yet.';
       return false;
     } catch (_) {
       _error = 'Something went wrong. Please try again.';
@@ -65,6 +140,7 @@ class AuthProvider extends ChangeNotifier {
     await _service.logout();
     _user = null;
     _status = AuthStatus.unauthenticated;
+    await refreshDeviceLockAvailability();
     notifyListeners();
   }
 

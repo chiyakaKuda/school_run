@@ -7,12 +7,23 @@ class AppStrings {
   static const String tagline = 'Every child, safely there.';
 
   // Auth
-  static const String login = 'Log in';
-  static const String logout = 'Log out';
+  static const String signIn = 'Sign in';
+  static const String signUp = 'Sign up';
+  static const String signOut = 'Sign out';
   static const String email = 'Email';
   static const String password = 'Password';
+  static const String fullName = 'Full name';
+  static const String phone = 'Phone';
+  static const String confirmPassword = 'Confirm password';
+  static const String rememberMe = 'Remember me';
+  static const String forgotPassword = 'Forgot password?';
   static const String welcomeBack = 'Welcome back';
   static const String loginSubtitle = 'Sign in to continue your school run.';
+  static const String signUpSubtitle = 'Create an account to follow your\nchild\'s journey.';
+  static const String noAccount = 'Don\'t have an account?';
+  static const String haveAccount = 'Already have an account?';
+  static const String unlockReason = 'Unlock School Run';
+  static const String useDeviceLock = 'Use device unlock';
 
   // Driver
   static const String driverHome = 'Today\'s run';

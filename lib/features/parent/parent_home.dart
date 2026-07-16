@@ -207,7 +207,12 @@ class _ChildCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(student.name, style: context.text.titleMedium),
+                Text(
+                  student.name,
+                  style: context.text.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -220,10 +225,14 @@ class _ChildCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text(
-                      '${student.status.label} • ${student.grade}',
-                      style: context.text.bodySmall
-                          ?.copyWith(color: AppColors.textSecondary),
+                    Flexible(
+                      child: Text(
+                        '${student.status.label} • ${student.grade}',
+                        style: context.text.bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),

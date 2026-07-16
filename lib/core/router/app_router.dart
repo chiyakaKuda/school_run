@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../features/auth/login_page.dart';
+import '../../features/auth/signup_page.dart';
 import '../../features/auth/splash_page.dart';
 import '../../features/driver/driver_home.dart';
 import '../../features/driver/student_list_page.dart';
@@ -16,6 +17,7 @@ class AppRoutes {
 
   static const String splash = '/';
   static const String login = '/login';
+  static const String signup = '/signup';
   static const String driverHome = '/driver';
   static const String trip = '/driver/trip';
   static const String studentList = '/driver/students';
@@ -34,6 +36,7 @@ class AppRouter {
     return switch (settings.name) {
       AppRoutes.splash => _page(const SplashPage(), settings),
       AppRoutes.login => _page(const LoginPage(), settings),
+      AppRoutes.signup => _page(const SignupPage(), settings),
       AppRoutes.driverHome => _page(const DriverHome(), settings),
       AppRoutes.trip => _page(
           TripPage(tripId: settings.arguments as String?),

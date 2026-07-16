@@ -14,7 +14,7 @@ class ProfilePage extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text(AppStrings.logout),
+        title: const Text(AppStrings.signOut),
         content: const Text('Are you sure you want to log out?'),
         actions: [
           TextButton(
@@ -24,7 +24,7 @@ class ProfilePage extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(foregroundColor: AppColors.error),
-            child: const Text(AppStrings.logout),
+            child: const Text(AppStrings.signOut),
           ),
         ],
       ),
@@ -125,7 +125,7 @@ class ProfilePage extends StatelessWidget {
             ),
             const SizedBox(height: 28),
             PrimaryButton(
-              label: AppStrings.logout,
+              label: AppStrings.signOut,
               icon: Icons.logout_rounded,
               danger: true,
               onPressed: () => _confirmLogout(context),
