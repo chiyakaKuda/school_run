@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/router/app_router.dart';
+import '../../shared/widgets/primary_button.dart';
 import '../../utils/extensions.dart';
 import '../auth/auth_provider.dart';
 
@@ -21,6 +23,7 @@ class ProfilePage extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
             child: const Text(AppStrings.logout),
           ),
         ],
@@ -40,73 +43,162 @@ class ProfilePage extends StatelessWidget {
     final user = AuthScope.of(context).user;
 
     return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.profile)),
-      body: ListView(
-        children: [
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
+      appBar: AppBar(
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: IconButton(
+            icon: const Icon(Icons.chevron_left_rounded),
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+        ),
+        title: const Text(AppStrings.profile),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          children: [
+            Column(
               children: [
                 CircleAvatar(
-                  radius: 32,
+                  radius: 44,
+                  backgroundColor: AppColors.accent,
                   child: Text(
                     user?.name.initials ?? '?',
-                    style: context.text.titleLarge,
+                    style: context.text.headlineMedium
+                        ?.copyWith(color: AppColors.onAccent),
                   ),
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        user?.name ?? 'Not signed in',
-                        style: context.text.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w700),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        user?.email ?? '',
-                        style: context.text.bodySmall
-                            ?.copyWith(color: context.colors.onSurfaceVariant),
-                      ),
-                      if (user != null) ...[
-                        const SizedBox(height: 6),
-                        Chip(
-                          label: Text(user.role.name.capitalized),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ],
-                    ],
+                const SizedBox(height: 16),
+                Text(
+                  user?.name ?? 'Not signed in',
+                  style: context.text.headlineSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  user?.email ?? '',
+                  style: context.text.bodyMedium
+                      ?.copyWith(color: AppColors.textSecondary),
+                ),
+                if (user != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentContainer,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text(
+                      user.role.name.capitalized,
+                      style: context.text.labelMedium
+                          ?.copyWith(color: AppColors.accent),
+                    ),
                   ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 32),
+            _Group(
+              children: [
+                _Row(
+                  icon: Icons.phone_outlined,
+                  label: 'Phone',
+                  value: user?.phone ?? 'Not set',
+                ),
+                _Row(
+                  icon: Icons.notifications_none_rounded,
+                  label: AppStrings.notifications,
+                  onTap: () =>
+                      Navigator.of(context).pushNamed(AppRoutes.notifications),
+                ),
+                _Row(
+                  icon: Icons.shield_outlined,
+                  label: 'Privacy & safety',
+                  onTap: () {},
+                ),
+                _Row(
+                  icon: Icons.help_outline_rounded,
+                  label: 'Help',
+                  onTap: () {},
                 ),
               ],
             ),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.phone_outlined),
-            title: const Text('Phone'),
-            subtitle: Text(user?.phone ?? 'Not set'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.notifications_none),
-            title: const Text(AppStrings.notifications),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () =>
-                Navigator.of(context).pushNamed(AppRoutes.notifications),
-          ),
-          const Divider(),
-          ListTile(
-            leading: Icon(Icons.logout, color: context.colors.error),
-            title: Text(
-              AppStrings.logout,
-              style: TextStyle(color: context.colors.error),
+            const SizedBox(height: 28),
+            PrimaryButton(
+              label: AppStrings.logout,
+              icon: Icons.logout_rounded,
+              danger: true,
+              onPressed: () => _confirmLogout(context),
             ),
-            onTap: () => _confirmLogout(context),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadius.card),
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < children.length; i++) ...[
+            children[i],
+            if (i != children.length - 1)
+              const Divider(height: 1, indent: 58, endIndent: 16),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _Row extends StatelessWidget {
+  const _Row({
+    required this.icon,
+    required this.label,
+    this.value,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: AppColors.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(child: Text(label, style: context.text.bodyLarge)),
+            if (value != null)
+              Text(
+                value!,
+                style: context.text.bodySmall
+                    ?.copyWith(color: AppColors.textSecondary),
+              ),
+            if (onTap != null) ...[
+              const SizedBox(width: 6),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 20, color: AppColors.textSecondary),
+            ],
+          ],
+        ),
       ),
     );
   }

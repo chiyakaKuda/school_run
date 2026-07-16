@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/router/app_router.dart';
-import '../../shared/widgets/app_logo.dart';
 import '../../shared/widgets/custom_textfield.dart';
 import '../../shared/widgets/primary_button.dart';
 import '../../utils/validators.dart';
@@ -46,67 +46,88 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final auth = AuthScope.of(context);
+    final text = Theme.of(context).textTheme;
 
     return Scaffold(
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const AppLogo(size: 72),
-                    const SizedBox(height: 32),
-                    Text(
-                      AppStrings.welcomeBack,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.w700),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 24),
+                  Container(
+                    height: 56,
+                    width: 56,
+                    decoration: const BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      AppStrings.loginSubtitle,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
+                    child: const Icon(
+                      Icons.directions_bus_rounded,
+                      color: AppColors.onAccent,
+                      size: 28,
                     ),
-                    const SizedBox(height: 28),
-                    CustomTextField(
-                      label: AppStrings.email,
-                      controller: _email,
-                      hint: 'you@example.com',
-                      prefixIcon: Icons.mail_outline,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      validator: Validators.email,
-                      enabled: !auth.isBusy,
+                  ),
+                  const SizedBox(height: 40),
+
+                  // The inspo's oversized display heading.
+                  Text('Welcome\nback.', style: text.displaySmall),
+                  const SizedBox(height: 12),
+                  Text(
+                    AppStrings.loginSubtitle,
+                    style: text.bodyLarge?.copyWith(
+                      color: AppColors.textSecondary,
                     ),
-                    const SizedBox(height: 16),
-                    CustomTextField(
-                      label: AppStrings.password,
-                      controller: _password,
-                      obscure: true,
-                      prefixIcon: Icons.lock_outline,
-                      textInputAction: TextInputAction.done,
-                      validator: Validators.password,
-                      enabled: !auth.isBusy,
-                      onSubmitted: (_) => _submit(),
+                  ),
+                  const SizedBox(height: 36),
+
+                  CustomTextField(
+                    label: AppStrings.email,
+                    controller: _email,
+                    hint: 'you@example.com',
+                    prefixIcon: Icons.mail_outline_rounded,
+                    keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    validator: Validators.email,
+                    enabled: !auth.isBusy,
+                  ),
+                  const SizedBox(height: 18),
+                  CustomTextField(
+                    label: AppStrings.password,
+                    controller: _password,
+                    obscure: true,
+                    prefixIcon: Icons.lock_outline_rounded,
+                    textInputAction: TextInputAction.done,
+                    validator: Validators.password,
+                    enabled: !auth.isBusy,
+                    onSubmitted: (_) => _submit(),
+                  ),
+
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: auth.isBusy ? null : () {},
+                      child: const Text('Forgot password?'),
                     ),
-                    if (auth.error != null) ...[
-                      const SizedBox(height: 16),
-                      _ErrorBanner(message: auth.error!),
-                    ],
-                    const SizedBox(height: 24),
-                    PrimaryButton(
-                      label: AppStrings.login,
-                      busy: auth.isBusy,
-                      onPressed: _submit,
-                    ),
+                  ),
+
+                  if (auth.error != null) ...[
+                    const SizedBox(height: 8),
+                    _ErrorBanner(message: auth.error!),
                   ],
-                ),
+
+                  const SizedBox(height: 24),
+                  PrimaryButton(
+                    label: AppStrings.login,
+                    busy: auth.isBusy,
+                    onPressed: _submit,
+                  ),
+                ],
               ),
             ),
           ),
@@ -123,21 +144,25 @@ class _ErrorBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: colors.errorContainer,
-        borderRadius: BorderRadius.circular(10),
+        color: AppColors.error.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.input),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 20, color: colors.onErrorContainer),
-          const SizedBox(width: 8),
+          const Icon(Icons.error_outline_rounded,
+              size: 20, color: AppColors.error),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(color: colors.onErrorContainer),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: AppColors.error),
             ),
           ),
         ],

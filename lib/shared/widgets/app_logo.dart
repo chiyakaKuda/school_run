@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 
 /// Wordmark used on the splash and login screens. Drawn rather than loaded
@@ -28,29 +29,34 @@ class AppLogo extends StatelessWidget {
           width: size,
           decoration: BoxDecoration(
             color: colors.primary,
-            borderRadius: BorderRadius.circular(size * 0.28),
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: colors.primary.withValues(alpha: 0.25),
+                blurRadius: size * 0.5,
+                spreadRadius: size * 0.05,
+              ),
+            ],
           ),
           child: Icon(
             Icons.directions_bus_rounded,
-            size: size * 0.55,
+            size: size * 0.5,
             color: colors.onPrimary,
           ),
         ),
         if (showName) ...[
-          SizedBox(height: size * 0.22),
+          SizedBox(height: size * 0.3),
           Text(
             AppStrings.appName,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
+            style: Theme.of(context).textTheme.headlineMedium,
           ),
         ],
         if (showTagline) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
             AppStrings.tagline,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: colors.onSurfaceVariant,
+                  color: AppColors.textSecondary,
                 ),
           ),
         ],

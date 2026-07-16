@@ -57,6 +57,18 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # Both families are variable fonts, so each ships as a single file and the
+  # weight is selected at runtime via FontVariation('wght', …) — see
+  # AppTheme._display / _body. Declaring `weight:` here would do nothing.
+  # Outfit and Inter are OFL-1.1; licences sit next to the .ttf files.
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-Variable.ttf
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
