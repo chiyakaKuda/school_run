@@ -1,0 +1,2 @@
+Cross-feature ChangeNotifiers live here (e.g. theme mode, connectivity).
+Feature-scoped state stays with its feature — see features/auth/auth_provider.dart.
