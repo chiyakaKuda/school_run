@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -91,14 +92,59 @@ class ApiService {
       // failure the UI can show rather than a spinner that never stops.
       response = await request.timeout(ApiConstants.receiveTimeout);
     } on TimeoutException {
+      _logTransportFailure(method, uri, 'TimeoutException');
       throw const ApiException('The server took too long to answer.');
-    } on SocketException {
-      throw const ApiException('Cannot reach the server. Check your connection.');
+    } on SocketException catch (e) {
+      _logTransportFailure(method, uri, e.toString());
+      throw ApiException(_socketMessage(e));
     } on http.ClientException catch (e) {
+      _logTransportFailure(method, uri, e.toString());
       throw ApiException(e.message);
     }
 
     return _decode(response);
+  }
+
+  /// Every SocketException reads the same to a user, but the causes are not
+  /// interchangeable — and collapsing them into "check your connection" sends
+  /// you debugging the network when the app was never allowed onto it.
+  String _socketMessage(SocketException e) {
+    final errno = e.osError?.errorCode;
+
+    // EACCES. On Android this is almost always a missing INTERNET permission
+    // in the *release* manifest: the debug and profile source sets declare it,
+    // so this fails only in a built APK and never under `flutter run`.
+    if (errno == 13) {
+      return 'The app is not permitted to use the network. '
+          'This is a build problem, not your connection.';
+    }
+
+    // Failed host lookup — DNS. Either genuinely offline, or the base URL's
+    // host is wrong or misspelt.
+    if (errno == 7 || e.message.contains('Failed host lookup')) {
+      return 'Cannot find the server. Check your connection.';
+    }
+
+    // ECONNREFUSED — something answered at that address and closed the door.
+    // The host resolves, so this is a wrong port or a server that is down.
+    if (errno == 111) {
+      return 'The server refused the connection.';
+    }
+
+    return 'Cannot reach the server. Check your connection.';
+  }
+
+  /// Debug-only. The `assert` body is stripped entirely from release builds,
+  /// so the real exception is visible while developing without ever leaking
+  /// the URL or transport details into a shipped app.
+  void _logTransportFailure(String method, Uri uri, String error) {
+    assert(() {
+      developer.log(
+        '$method $uri failed: $error',
+        name: 'ApiService',
+      );
+      return true;
+    }());
   }
 
   dynamic _decode(http.Response response) {
