@@ -1,0 +1,45 @@
+name: Build release APK
+
+# Manual only — this produces a debug-signed release build for sideloading
+# onto demo/test phones, not a Play Store submission. Runs on Ubuntu
+# specifically: building this locally on Windows hits a JDK/Windows bug where
+# java.nio.channels.Selector's internal loopback pipe fails via AF_UNIX
+# ("Unable to establish loopback connection"), reproduced with a bare 5-line
+# Selector.open() test outside of Gradle entirely — it is not fixable with a
+# Gradle or JVM flag, and does not exist on Linux runners.
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Backend base URL (no trailing slash before /api/v1)"
+        required: true
+        default: "https://school-run-dash-two.vercel.app/api/v1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - run: |
+          flutter build apk --release \
+            --dart-define=API_BASE_URL=${{ inputs.api_base_url }} \
+            --dart-define=FAKE_AUTH=false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: school-run-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
