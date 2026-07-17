@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required to reach the backend API. The debug and profile manifests
+         declare this too, but those source sets are not merged into a release
+         build — without it here, every request in a release APK fails at the
+         socket with a SocketException and no network ever leaves the app. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- Required by local_auth for the fingerprint / face / PIN prompt. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
 
