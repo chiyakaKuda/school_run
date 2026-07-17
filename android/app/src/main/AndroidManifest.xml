@@ -2,6 +2,14 @@
     <!-- Required by local_auth for the fingerprint / face / PIN prompt. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
 
+    <!-- Required by geolocator for TripPage's location streaming while a run
+         is in progress. Foreground-only: no ACCESS_BACKGROUND_LOCATION,
+         because that permission requires a much stricter Play Store review
+         and a foreground service, and nothing here streams once the app is
+         backgrounded — see the note in trip_page.dart. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
     <application
         android:label="school_run"
         android:name="${applicationName}"

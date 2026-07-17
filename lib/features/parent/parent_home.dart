@@ -49,12 +49,17 @@ class _ParentHomeState extends State<ParentHome> {
     });
 
     try {
-      final children = await _studentsRepo.list();
+      // Independent reads, so they go out together rather than in series —
+      // each is its own round trip to a Neon compute in us-east-1, and a phone
+      // on a real (as opposed to the dev machine's wired LAN) connection pays
+      // that latency in full for every one, not just the first.
+      final results = await Future.wait([_studentsRepo.list(), _tripsRepo.list()]);
+      final children = results[0] as List<Student>;
+      final trips = results[1] as List<Trip>;
 
       // "Today's driver" is whichever trip is carrying this parent's children
       // right now — running takes priority over merely scheduled, so a parent
       // mid-run sees the driver actually on the road rather than tomorrow's.
-      final trips = await _tripsRepo.list();
       Trip? chosen;
       for (final trip in trips) {
         if (trip.isActive) {
@@ -67,15 +72,25 @@ class _ParentHomeState extends State<ParentHome> {
       DriverProfile? driver;
       Vehicle? vehicle;
       if (chosen != null) {
+        // Calling both before awaiting either dispatches both requests
+        // immediately — Dart starts an async function's body up to its first
+        // `await` the moment it's called — so they run concurrently on the
+        // wire even though each is awaited in turn below. Kept as two plain
+        // try/catches, not Future.wait, because getById's declared return
+        // type is non-nullable and a failed lookup needs to become `null`
+        // without fighting that.
+        final driverFuture = _driversRepo.getById(chosen.driverId);
+        final vehicleFuture = _vehiclesRepo.getById(chosen.vehicleId);
+
         // Best-effort: a driver or vehicle lookup failing shouldn't blank the
         // whole screen when the children list loaded fine.
         try {
-          driver = await _driversRepo.getById(chosen.driverId);
+          driver = await driverFuture;
         } on ApiException {
           driver = null;
         }
         try {
-          vehicle = await _vehiclesRepo.getById(chosen.vehicleId);
+          vehicle = await vehicleFuture;
         } on ApiException {
           vehicle = null;
         }

@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/router/app_router.dart';
 import '../../core/services/api_service.dart';
+import '../../core/services/location_service.dart';
 import '../../core/services/trips_repository.dart';
 import '../../core/services/vehicles_repository.dart';
 import '../../models/trip.dart';
@@ -25,6 +29,7 @@ class TripPage extends StatefulWidget {
 class _TripPageState extends State<TripPage> {
   final TripsRepository _tripsRepo = TripsRepository.instance;
   final VehiclesRepository _vehiclesRepo = VehiclesRepository.instance;
+  final LocationService _locationService = LocationService.instance;
 
   Trip? _trip;
   Vehicle? _vehicle;
@@ -32,12 +37,79 @@ class _TripPageState extends State<TripPage> {
   bool _busy = false;
   String? _error;
 
+  StreamSubscription<Position>? _positionSub;
+  bool _sharingLocation = false;
+
   bool get _isRunning => _trip?.isActive ?? false;
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    // Foreground-only tracking, deliberately: leaving the screen — or the
+    // app — stops the stream. A background service that kept posting after
+    // the driver moved on would need its own persistent notification and a
+    // much heavier permission (ACCESS_BACKGROUND_LOCATION), which is a
+    // separate feature, not a default to fall into silently.
+    _positionSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _beginSharingLocation() async {
+    if (_positionSub != null) return; // already streaming
+
+    final access = await _locationService.requestAccess();
+    if (!mounted) return;
+
+    switch (access) {
+      case LocationAccessResult.granted:
+        break;
+      case LocationAccessResult.serviceDisabled:
+        context.showSnack(
+          'Turn on location services to share your position with parents.',
+        );
+        return;
+      case LocationAccessResult.denied:
+        context.showSnack(
+          'Location permission is needed to share your position with parents.',
+        );
+        return;
+      case LocationAccessResult.deniedForever:
+        context.showSnack(
+          'Location is blocked for School Run. Enable it in Settings to '
+          'share your position with parents.',
+        );
+        return;
+    }
+
+    setState(() => _sharingLocation = true);
+
+    _positionSub = _locationService.watchPosition().listen((position) async {
+      final trip = _trip;
+      if (trip == null) return;
+
+      try {
+        await _tripsRepo.postLocation(
+          tripId: trip.id,
+          latitude: position.latitude,
+          longitude: position.longitude,
+        );
+      } on ApiException {
+        // One missed ping is not worth interrupting the driver over — the
+        // next position update, ~15m on, tries again. A parent sees a stale
+        // dot for a few seconds rather than a dropped trip.
+      }
+    });
+  }
+
+  void _stopSharingLocation() {
+    _positionSub?.cancel();
+    _positionSub = null;
+    if (mounted) setState(() => _sharingLocation = false);
   }
 
   Future<void> _load() async {
@@ -72,6 +144,11 @@ class _TripPageState extends State<TripPage> {
         _vehicle = vehicle;
         _loading = false;
       });
+
+      // A driver can leave this screen and come back to a trip that is still
+      // running — the manifest, say, then back — so sharing resumes on
+      // arrival rather than only ever starting from a fresh "Start trip" tap.
+      if (trip.isActive) unawaited(_beginSharingLocation());
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -92,6 +169,13 @@ class _TripPageState extends State<TripPage> {
       final updated =
           wasRunning ? await _tripsRepo.end(trip.id) : await _tripsRepo.start(trip.id);
       if (!mounted) return;
+
+      if (wasRunning) {
+        _stopSharingLocation();
+      } else {
+        unawaited(_beginSharingLocation());
+      }
+
       setState(() {
         _trip = updated;
         _busy = false;
@@ -145,7 +229,11 @@ class _TripPageState extends State<TripPage> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                     children: [
-                      _StatusCard(trip: t, vehicle: _vehicle),
+                      _StatusCard(
+                        trip: t,
+                        vehicle: _vehicle,
+                        sharingLocation: _sharingLocation,
+                      ),
                       const SizedBox(height: 16),
                       Row(
                         children: [
@@ -198,10 +286,15 @@ class _TripPageState extends State<TripPage> {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.trip, required this.vehicle});
+  const _StatusCard({
+    required this.trip,
+    required this.vehicle,
+    required this.sharingLocation,
+  });
 
   final Trip trip;
   final Vehicle? vehicle;
+  final bool sharingLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -252,6 +345,28 @@ class _StatusCard extends StatelessWidget {
             style: context.text.bodyMedium
                 ?.copyWith(color: AppColors.textSecondary),
           ),
+          if (live) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  sharingLocation
+                      ? Icons.location_on_rounded
+                      : Icons.location_off_rounded,
+                  size: 14,
+                  color: AppColors.accent,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  sharingLocation
+                      ? 'Sharing your location with parents'
+                      : 'Location not shared — check permissions',
+                  style: context.text.labelSmall
+                      ?.copyWith(color: AppColors.accent),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

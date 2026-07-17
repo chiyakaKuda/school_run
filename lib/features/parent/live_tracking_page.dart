@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/services/api_service.dart';
@@ -11,14 +14,15 @@ import '../../models/student.dart';
 import '../../models/trip.dart';
 import '../../models/vehicle.dart';
 import '../../shared/widgets/loading_widget.dart';
+import '../../shared/widgets/vehicle_map.dart';
 import '../../utils/extensions.dart';
 
+/// How often the trip is re-fetched while it is running, to move the marker.
+/// The driver posts a position on ~15m of movement (see `LocationService`),
+/// so polling much faster than this would just re-render the same point.
+const Duration _pollInterval = Duration(seconds: 6);
+
 /// Live vehicle position for a child's current trip.
-///
-/// A real map needs a plugin (`google_maps_flutter` or `flutter_map`), so the
-/// canvas below is a painted stand-in with the right shape: dark ground, green
-/// route, endpoint pins. Swap [_RouteCanvas] for the map widget and keep the
-/// sheet as-is.
 class LiveTrackingPage extends StatefulWidget {
   const LiveTrackingPage({super.key, this.studentId});
 
@@ -41,10 +45,18 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
   bool _loading = true;
   String? _error;
 
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -63,11 +75,16 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
     });
 
     try {
-      final student = await _studentsRepo.getById(studentId);
+      // Neither depends on the other's result, so both go out together — a
+      // real device pays full round-trip latency to Neon (us-east-1) on every
+      // request, not just the dev machine's near-zero LAN latency to it.
+      final studentFuture = _studentsRepo.getById(studentId);
+      final tripsFuture = _tripsRepo.list();
+      final student = await studentFuture;
 
       // The trip actually carrying this child today — not, as the previous
       // fixture-backed version did, whichever trip happened to load first.
-      final trips = await _tripsRepo.list();
+      final trips = await tripsFuture;
       Trip? trip;
       for (final t in trips) {
         if (t.studentIds.contains(studentId)) {
@@ -79,13 +96,15 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
       DriverProfile? driver;
       Vehicle? vehicle;
       if (trip != null) {
+        final driverFuture = _driversRepo.getById(trip.driverId);
+        final vehicleFuture = _vehiclesRepo.getById(trip.vehicleId);
         try {
-          driver = await _driversRepo.getById(trip.driverId);
+          driver = await driverFuture;
         } on ApiException {
           driver = null;
         }
         try {
-          vehicle = await _vehiclesRepo.getById(trip.vehicleId);
+          vehicle = await vehicleFuture;
         } on ApiException {
           vehicle = null;
         }
@@ -99,12 +118,36 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
         _vehicle = vehicle;
         _loading = false;
       });
+
+      _pollTimer?.cancel();
+      if (trip != null && trip.isActive) _pollTimer = Timer.periodic(_pollInterval, (_) => _poll());
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = e.message;
       });
+    }
+  }
+
+  /// Refreshes only the trip — the marker moves, nothing else re-fetches.
+  /// [_load] re-resolves student/driver/vehicle too, which this deliberately
+  /// skips: those don't change mid-trip, and re-requesting them every six
+  /// seconds would just be load with nothing to show for it.
+  Future<void> _poll() async {
+    final trip = _trip;
+    if (trip == null) return;
+
+    try {
+      final fresh = await _tripsRepo.getById(trip.id);
+      if (!mounted) return;
+      setState(() => _trip = fresh);
+
+      // The run ended since the last poll — nothing left to follow.
+      if (!fresh.isActive) _pollTimer?.cancel();
+    } on ApiException {
+      // A missed poll tick isn't worth surfacing; the next one, six seconds
+      // on, tries again.
     }
   }
 
@@ -134,10 +177,18 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
       );
     }
 
+    final location = _trip?.lastLocation;
+
     return Scaffold(
       body: Stack(
         children: [
-          const Positioned.fill(child: _RouteCanvas()),
+          Positioned.fill(
+            child: VehicleMap(
+              position: location == null
+                  ? null
+                  : LatLng(location.latitude, location.longitude),
+            ),
+          ),
 
           // Floating back control, as in the reference.
           SafeArea(
@@ -347,80 +398,4 @@ class _TrackingSheet extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Painted placeholder standing in for the map.
-class _RouteCanvas extends StatelessWidget {
-  const _RouteCanvas();
-
-  @override
-  Widget build(BuildContext context) {
-    return ColoredBox(
-      color: const Color(0xFF101216),
-      child: CustomPaint(painter: _RoutePainter(), child: const SizedBox()),
-    );
-  }
-}
-
-class _RoutePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final streets = Paint()
-      ..color = Colors.white.withValues(alpha: 0.04)
-      ..strokeWidth = 14;
-
-    // Faint street grid.
-    for (double x = -size.height; x < size.width; x += 78) {
-      canvas.drawLine(Offset(x, 0), Offset(x + size.height, size.height),
-          streets);
-    }
-    for (double y = 0; y < size.height + size.width; y += 92) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y - size.width), streets);
-    }
-
-    // Route.
-    final path = Path()
-      ..moveTo(size.width * 0.22, size.height * 0.74)
-      ..lineTo(size.width * 0.22, size.height * 0.52)
-      ..lineTo(size.width * 0.48, size.height * 0.52)
-      ..lineTo(size.width * 0.48, size.height * 0.3)
-      ..lineTo(size.width * 0.78, size.height * 0.3);
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = AppColors.accent.withValues(alpha: 0.25)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 12
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-    canvas.drawPath(
-      path,
-      Paint()
-        ..color = AppColors.accent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-
-    _pin(canvas, Offset(size.width * 0.22, size.height * 0.74));
-    _pin(canvas, Offset(size.width * 0.78, size.height * 0.3), filled: true);
-  }
-
-  void _pin(Canvas canvas, Offset centre, {bool filled = false}) {
-    canvas.drawCircle(
-      centre,
-      12,
-      Paint()..color = AppColors.accent.withValues(alpha: 0.2),
-    );
-    canvas.drawCircle(centre, 7, Paint()..color = AppColors.accent);
-    if (!filled) {
-      canvas.drawCircle(centre, 3, Paint()..color = const Color(0xFF101216));
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RoutePainter oldDelegate) => false;
 }
