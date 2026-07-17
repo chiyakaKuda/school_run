@@ -33,10 +33,35 @@ jobs:
 
       - run: flutter pub get
 
-      - run: |
+      - name: Build APK
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
           flutter build apk --release \
-            --dart-define=API_BASE_URL=${{ inputs.api_base_url }} \
+            --dart-define=API_BASE_URL="$API_BASE_URL" \
             --dart-define=FAKE_AUTH=false
+
+      # The INTERNET permission lives in the main manifest, but only the
+      # *merged* manifest proves it survived into the release build — the
+      # debug and profile source sets declare it too, which is exactly why
+      # its absence used to show up as an unreachable server in a sideloaded
+      # APK while `flutter run` worked fine. Fail here rather than ship a
+      # build that cannot open a socket.
+      - name: Verify INTERNET permission is in the release manifest
+        run: |
+          set -euo pipefail
+          merged=$(find build -path '*merged_manifest*' -name AndroidManifest.xml \
+            | grep -i release | head -1)
+          if [ -z "$merged" ]; then
+            echo "::error::No merged release manifest found under build/"
+            exit 1
+          fi
+          echo "Checking $merged"
+          if ! grep -q 'android.permission.INTERNET' "$merged"; then
+            echo "::error::INTERNET permission missing from the merged release manifest"
+            exit 1
+          fi
+          echo "INTERNET permission present."
 
       - uses: actions/upload-artifact@v4
         with:
