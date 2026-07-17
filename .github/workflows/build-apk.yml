@@ -50,8 +50,8 @@ jobs:
       - name: Verify INTERNET permission is in the release manifest
         run: |
           set -euo pipefail
-          merged=$(find build -path '*merged_manifest*' -name AndroidManifest.xml \
-            | grep -i release | head -1)
+           merged=$(find build/app -path '*merged_manifests*' -name AndroidManifest.xml \
+            | grep -i release | grep -v aapt_friendly | head -1)
           if [ -z "$merged" ]; then
             echo "::error::No merged release manifest found under build/"
             exit 1
