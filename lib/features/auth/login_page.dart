@@ -37,10 +37,19 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  /// Shared by password sign-in and device unlock, so both honour the
+  /// password-change gate.
   void _goHome(AuthProvider auth) {
-    if (auth.user == null) return;
-    Navigator.of(context)
-        .pushReplacementNamed(AppRouter.homeFor(auth.user!.role));
+    final user = auth.user;
+    if (user == null) return;
+
+    final route = AppRouter.destinationFor(user);
+    Navigator.of(context).pushReplacementNamed(
+      route,
+      // `forced`: arriving straight off a sign-in makes that screen
+      // undismissable.
+      arguments: route == AppRoutes.changePassword ? true : null,
+    );
   }
 
   Future<void> _submit() async {

@@ -107,6 +107,42 @@ class AuthService {
     _currentUser = user;
   }
 
+  /// Replaces the signed-in user's password.
+  ///
+  /// The first thing a provisioned driver or parent does: their account was
+  /// created with the school's default and [User.mustChangePassword] is set
+  /// until this succeeds.
+  ///
+  /// The server returns a fresh token and clears the flag server-side; both are
+  /// mirrored locally so the app doesn't keep asking.
+  Future<void> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (fakeAuthEnabled) {
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      final user = _currentUser;
+      if (user != null) {
+        _currentUser = user.copyWith(mustChangePassword: false);
+        await _storage.writeJson(StorageService.keyUser, _currentUser!.toJson());
+      }
+      return;
+    }
+
+    final response = await _api.post(
+      ApiConstants.changePassword,
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    ) as Map<String, dynamic>;
+
+    final user = _currentUser;
+    if (user != null) {
+      await _persist(
+        token: response['token'] as String,
+        user: user.copyWith(mustChangePassword: false),
+      );
+    }
+  }
+
   // ------------------------------------------------------------ device lock
 
   /// Whether the phone can do biometrics or fall back to PIN/pattern/password.

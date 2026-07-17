@@ -25,8 +25,17 @@ class _SplashPageState extends State<SplashPage> {
     if (!mounted) return;
 
     final user = auth.user;
+    if (user == null) {
+      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+      return;
+    }
+
+    // A restored session is gated too — force-quitting mid-change must not be
+    // a way around it.
+    final route = AppRouter.destinationFor(user);
     Navigator.of(context).pushReplacementNamed(
-      user == null ? AppRoutes.login : AppRouter.homeFor(user.role),
+      route,
+      arguments: route == AppRoutes.changePassword ? true : null,
     );
   }
 

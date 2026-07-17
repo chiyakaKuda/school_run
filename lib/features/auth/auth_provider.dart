@@ -57,6 +57,16 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-reads the user the service holds.
+  ///
+  /// Needed after a password change: that clears [User.mustChangePassword] on
+  /// the service's copy, and without this the provider would keep handing back
+  /// the stale one — routing the user to the change screen forever.
+  void syncUser() {
+    _user = _service.currentUser;
+    notifyListeners();
+  }
+
   Future<bool> login({required String email, required String password}) async {
     return _run(() => _service.login(
           email: email,

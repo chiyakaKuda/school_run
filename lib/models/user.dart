@@ -17,6 +17,7 @@ class User {
     required this.role,
     this.phone,
     this.photoUrl,
+    this.mustChangePassword = false,
   });
 
   final String id;
@@ -25,6 +26,11 @@ class User {
   final UserRole role;
   final String? phone;
   final String? photoUrl;
+
+  /// Set for accounts an admin provisioned with the school's default password.
+  /// They must choose their own before they can use the app — see
+  /// `ChangePasswordPage`. The server clears it once they do.
+  final bool mustChangePassword;
 
   bool get isDriver => role == UserRole.driver;
   bool get isParent => role == UserRole.parent;
@@ -36,6 +42,10 @@ class User {
         role: UserRole.fromString(json['role'] as String?),
         phone: json['phone'] as String?,
         photoUrl: json['photoUrl'] as String?,
+        // Absent on a cached user written before this field existed, so it
+        // defaults to false rather than locking someone out of a session they
+        // already have.
+        mustChangePassword: json['mustChangePassword'] as bool? ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -45,15 +55,23 @@ class User {
         'role': role.name,
         'phone': phone,
         'photoUrl': photoUrl,
+        'mustChangePassword': mustChangePassword,
       };
 
-  User copyWith({String? name, String? phone, String? photoUrl}) => User(
+  User copyWith({
+    String? name,
+    String? phone,
+    String? photoUrl,
+    bool? mustChangePassword,
+  }) =>
+      User(
         id: id,
         name: name ?? this.name,
         email: email,
         role: role,
         phone: phone ?? this.phone,
         photoUrl: photoUrl ?? this.photoUrl,
+        mustChangePassword: mustChangePassword ?? this.mustChangePassword,
       );
 
   @override

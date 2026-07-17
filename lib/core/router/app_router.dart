@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/auth/change_password_page.dart';
 import '../../features/auth/login_page.dart';
 import '../../features/auth/signup_page.dart';
 import '../../features/auth/splash_page.dart';
@@ -18,6 +19,7 @@ class AppRoutes {
   static const String splash = '/';
   static const String login = '/login';
   static const String signup = '/signup';
+  static const String changePassword = '/change-password';
   static const String driverHome = '/driver';
   static const String trip = '/driver/trip';
   static const String studentList = '/driver/students';
@@ -37,6 +39,12 @@ class AppRouter {
       AppRoutes.splash => _page(const SplashPage(), settings),
       AppRoutes.login => _page(const LoginPage(), settings),
       AppRoutes.signup => _page(const SignupPage(), settings),
+      AppRoutes.changePassword => _page(
+          // `true` when routed to straight off a sign-in, which makes the
+          // screen undismissable.
+          ChangePasswordPage(forced: settings.arguments as bool? ?? false),
+          settings,
+        ),
       AppRoutes.driverHome => _page(const DriverHome(), settings),
       AppRoutes.trip => _page(
           TripPage(tripId: settings.arguments as String?),
@@ -58,10 +66,24 @@ class AppRouter {
   }
 
   /// Where a user lands after signing in.
+  ///
+  /// Prefer [destinationFor] at every entry point — this ignores whether the
+  /// account still owes a password change.
   static String homeFor(UserRole role) => switch (role) {
         UserRole.driver => AppRoutes.driverHome,
         UserRole.parent || UserRole.admin => AppRoutes.parentHome,
       };
+
+  /// Where a user goes once authenticated, gate included.
+  ///
+  /// Every route into the app funnels through here — password sign-in, device
+  /// unlock, sign-up, and the cold-start restore on splash. Putting the check
+  /// in one of those and not the others would leave a provisioned account able
+  /// to reach the app on the shared default simply by force-quitting and
+  /// reopening.
+  static String destinationFor(User user) => user.mustChangePassword
+      ? AppRoutes.changePassword
+      : homeFor(user.role);
 
   static MaterialPageRoute<dynamic> _page(Widget child, RouteSettings settings) =>
       MaterialPageRoute<dynamic>(builder: (_) => child, settings: settings);

@@ -48,8 +48,10 @@ class _SignupPageState extends State<SignupPage> {
     );
     if (!mounted || !ok || auth.user == null) return;
 
+    // Someone who chose their own password on the way in never trips the gate,
+    // but this routes through it anyway rather than assuming.
     Navigator.of(context).pushNamedAndRemoveUntil(
-      AppRouter.homeFor(auth.user!.role),
+      AppRouter.destinationFor(auth.user!),
       (route) => false,
     );
   }
