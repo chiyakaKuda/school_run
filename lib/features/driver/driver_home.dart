@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/router/app_router.dart';
-import '../../core/services/demo_data.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/trips_repository.dart';
+import '../../core/services/vehicles_repository.dart';
 import '../../models/trip.dart';
+import '../../models/vehicle.dart';
+import '../../shared/widgets/app_shell.dart';
+import '../../shared/widgets/loading_widget.dart';
 import '../../utils/extensions.dart';
 import '../auth/auth_provider.dart';
 
@@ -16,11 +21,52 @@ class DriverHome extends StatefulWidget {
 }
 
 class _DriverHomeState extends State<DriverHome> {
-  // TODO: replace with ApiService.get(ApiConstants.trips).
-  final List<Trip> _trips = DemoData.trips;
-  int _selected = 0;
+  final TripsRepository _tripsRepo = TripsRepository.instance;
+  final VehiclesRepository _vehiclesRepo = VehiclesRepository.instance;
 
-  Trip get _trip => _trips[_selected];
+  List<Trip> _trips = const [];
+  Vehicle? _vehicle;
+  int _selected = 0;
+  bool _loading = true;
+  String? _error;
+
+  Trip? get _trip => _trips.isEmpty ? null : _trips[_selected.clamp(0, _trips.length - 1)];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // A driver's fleet is a single vehicle in this schema — there is no
+      // "my vehicle" endpoint, so the first (only) row is it.
+      final results = await Future.wait([_tripsRepo.list(), _vehiclesRepo.list()]);
+      if (!mounted) return;
+
+      final trips = results[0] as List<Trip>;
+      final vehicles = results[1] as List<Vehicle>;
+
+      setState(() {
+        _trips = trips;
+        _vehicle = vehicles.isEmpty ? null : vehicles.first;
+        _selected = 0;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
 
   String _greeting() {
     final h = DateTime.now().hour;
@@ -40,59 +86,80 @@ class _DriverHomeState extends State<DriverHome> {
           children: [
             const _TopBar(),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                children: [
-                  Text(
-                    '${_greeting()},\n$firstName.',
-                    style: context.text.displaySmall,
+              child: switch ((_loading, _error, _trips.isEmpty)) {
+                (true, _, _) => const LoadingWidget(),
+                (false, String message, _) => EmptyState(
+                    icon: Icons.wifi_off_rounded,
+                    message: message,
+                    onRetry: _load,
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    '${_trip.studentIds.length} students on your next run.',
-                    style: context.text.bodyLarge
-                        ?.copyWith(color: AppColors.textSecondary),
+                (false, null, true) => EmptyState(
+                    icon: Icons.event_busy_rounded,
+                    message: 'No runs assigned to you today.',
+                    onRetry: _load,
                   ),
-                  const SizedBox(height: 24),
-                  const _VehicleCard(),
-                  const SizedBox(height: 28),
-                  Text('Today\'s runs', style: context.text.titleLarge),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    height: 158,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      clipBehavior: Clip.none,
-                      itemCount: _trips.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 12),
-                      itemBuilder: (context, i) => _RunCard(
-                        trip: _trips[i],
-                        selected: i == _selected,
-                        onTap: () => setState(() => _selected = i),
-                      ),
+                (false, null, false) => RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: [
+                        Text(
+                          '${_greeting()},\n$firstName.',
+                          style: context.text.displaySmall,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          '${_trip!.studentIds.length} students on your next run.',
+                          style: context.text.bodyLarge
+                              ?.copyWith(color: AppColors.textSecondary),
+                        ),
+                        const SizedBox(height: 24),
+                        if (_vehicle != null) _VehicleCard(vehicle: _vehicle!),
+                        const SizedBox(height: 28),
+                        Text('Today\'s runs', style: context.text.titleLarge),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          height: 158,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            clipBehavior: Clip.none,
+                            itemCount: _trips.length,
+                            separatorBuilder: (_, _) => const SizedBox(width: 12),
+                            itemBuilder: (context, i) => _RunCard(
+                              trip: _trips[i],
+                              selected: i == _selected,
+                              onTap: () => setState(() => _selected = i),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                        _ManifestTile(
+                          count: _trip!.studentIds.length,
+                          onTap: () => Navigator.of(context).pushNamed(
+                            AppRoutes.studentList,
+                            arguments: _trip!.id,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 28),
-                  _ManifestTile(
-                    count: _trip.studentIds.length,
-                    onTap: () => Navigator.of(context).pushNamed(
-                      AppRoutes.studentList,
-                      arguments: _trip.id,
-                    ),
-                  ),
-                ],
-              ),
+              },
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: FilledButton(
-                onPressed: () => Navigator.of(context)
-                    .pushNamed(AppRoutes.trip, arguments: _trip.id),
-                child: Text(
-                  _trip.isActive ? 'Continue trip' : 'Start trip',
+            if (!_loading && _error == null && _trips.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context)
+                      .pushNamed(AppRoutes.trip, arguments: _trip!.id)
+                      // The trip screen may have started/ended/cancelled the
+                      // run; reload so the card underneath reflects it rather
+                      // than showing stale state when the driver comes back.
+                      .then((_) => _load()),
+                  child: Text(
+                    _trip!.isActive ? 'Continue trip' : 'Start trip',
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -119,12 +186,12 @@ class _TopBar extends StatelessWidget {
           const Spacer(),
           IconButton(
             icon: const Icon(Icons.notifications_none_rounded, size: 20),
-            onPressed: () =>
-                Navigator.of(context).pushNamed(AppRoutes.notifications),
+            // Alerts is a sibling tab inside DriverShell, not a pushed screen.
+            onPressed: () => ShellScope.maybeOf(context)?.goTo(1),
           ),
           const SizedBox(width: 10),
           GestureDetector(
-            onTap: () => Navigator.of(context).pushNamed(AppRoutes.profile),
+            onTap: () => ShellScope.maybeOf(context)?.goTo(2),
             child: CircleAvatar(
               radius: 22,
               backgroundColor: AppColors.accent,
@@ -142,12 +209,12 @@ class _TopBar extends StatelessWidget {
 }
 
 class _VehicleCard extends StatelessWidget {
-  const _VehicleCard();
+  const _VehicleCard({required this.vehicle});
+
+  final Vehicle vehicle;
 
   @override
   Widget build(BuildContext context) {
-    const vehicle = DemoData.vehicle;
-
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(

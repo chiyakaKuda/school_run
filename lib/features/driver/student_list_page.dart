@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
-import '../../core/services/demo_data.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/students_repository.dart';
 import '../../models/student.dart';
 import '../../shared/widgets/loading_widget.dart';
 import '../../utils/extensions.dart';
@@ -18,25 +19,73 @@ class StudentListPage extends StatefulWidget {
 }
 
 class _StudentListPageState extends State<StudentListPage> {
-  // TODO: load via ApiService.get(ApiConstants.students, query: {'tripId': ...}).
-  late final List<Student> _students = List.of(DemoData.students);
-  final bool _loading = false;
+  final StudentsRepository _repo = StudentsRepository.instance;
+
+  List<Student> _students = const [];
+  bool _loading = true;
+  String? _error;
 
   int get _onboard =>
       _students.where((s) => s.status == StudentStatus.onboard).length;
 
-  void _cycleStatus(Student student) {
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // Scoped to this run's manifest — without tripId this would return
+      // every student across every trip this driver has ever run.
+      final students = await _repo.list(tripId: widget.tripId);
+      if (!mounted) return;
+      setState(() {
+        _students = students;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
+
+  Future<void> _cycleStatus(Student student) async {
+    final tripId = widget.tripId;
+    if (tripId == null) return;
+
     final next = switch (student.status) {
       StudentStatus.waiting => StudentStatus.onboard,
       StudentStatus.onboard => StudentStatus.droppedOff,
       StudentStatus.droppedOff || StudentStatus.absent => StudentStatus.waiting,
     };
 
-    setState(() {
-      final i = _students.indexOf(student);
-      if (i != -1) _students[i] = student.copyWith(status: next);
-    });
-    // TODO: PATCH the new status so parents see it live.
+    final i = _students.indexOf(student);
+    if (i == -1) return;
+
+    // Optimistic — a driver working down a manifest of twelve children needs
+    // each tap to feel instant, not wait on a round trip.
+    setState(() => _students[i] = student.copyWith(status: next));
+
+    try {
+      await _repo.updateStatus(
+        studentId: student.id,
+        status: next,
+        tripId: tripId,
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _students[i] = student);
+      context.showSnack(e.message);
+    }
   }
 
   @override
@@ -52,44 +101,52 @@ class _StudentListPageState extends State<StudentListPage> {
         ),
         title: const Text(AppStrings.students),
       ),
-      body: switch ((_loading, _students.isEmpty)) {
-        (true, _) => const LoadingWidget(message: AppStrings.loading),
-        (false, true) => const EmptyState(
+      body: switch ((_loading, _error, _students.isEmpty)) {
+        (true, _, _) => const LoadingWidget(message: AppStrings.loading),
+        (false, String message, _) => EmptyState(
+            icon: Icons.wifi_off_rounded,
+            message: message,
+            onRetry: _load,
+          ),
+        (false, null, true) => const EmptyState(
             icon: Icons.people_outline_rounded,
             message: 'No students on this run yet.',
           ),
-        (false, false) => Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
-                child: Row(
-                  children: [
-                    Text(
-                      '$_onboard of ${_students.length} on board',
-                      style: context.text.bodyMedium
-                          ?.copyWith(color: AppColors.textSecondary),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'Tap to update',
-                      style: context.text.bodySmall
-                          ?.copyWith(color: AppColors.textSecondary),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                  itemCount: _students.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, i) => _StudentTile(
-                    student: _students[i],
-                    onTap: () => _cycleStatus(_students[i]),
+        (false, null, false) => RefreshIndicator(
+            onRefresh: _load,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+                  child: Row(
+                    children: [
+                      Text(
+                        '$_onboard of ${_students.length} on board',
+                        style: context.text.bodyMedium
+                            ?.copyWith(color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Tap to update',
+                        style: context.text.bodySmall
+                            ?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                    itemCount: _students.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, i) => _StudentTile(
+                      student: _students[i],
+                      onTap: () => _cycleStatus(_students[i]),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
       },
     );

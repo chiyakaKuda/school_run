@@ -3,8 +3,12 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/router/app_router.dart';
-import '../../core/services/demo_data.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/trips_repository.dart';
+import '../../core/services/vehicles_repository.dart';
 import '../../models/trip.dart';
+import '../../models/vehicle.dart';
+import '../../shared/widgets/loading_widget.dart';
 import '../../shared/widgets/primary_button.dart';
 import '../../utils/extensions.dart';
 
@@ -19,35 +23,93 @@ class TripPage extends StatefulWidget {
 }
 
 class _TripPageState extends State<TripPage> {
-  // TODO: load via ApiService.get(ApiConstants.tripById(id)).
-  late Trip _trip = DemoData.trips.firstWhere(
-    (t) => t.id == widget.tripId,
-    orElse: () => DemoData.trips.first,
-  );
-  bool _busy = false;
+  final TripsRepository _tripsRepo = TripsRepository.instance;
+  final VehiclesRepository _vehiclesRepo = VehiclesRepository.instance;
 
-  bool get _isRunning => _trip.isActive;
+  Trip? _trip;
+  Vehicle? _vehicle;
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  bool get _isRunning => _trip?.isActive ?? false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final tripId = widget.tripId;
+    if (tripId == null) {
+      setState(() {
+        _loading = false;
+        _error = 'No run was selected.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final trip = await _tripsRepo.getById(tripId);
+      Vehicle? vehicle;
+      try {
+        vehicle = await _vehiclesRepo.getById(trip.vehicleId);
+      } on ApiException {
+        // The trip itself is what matters here; a vehicle lookup failure
+        // shouldn't block the start/end action over a cosmetic detail.
+        vehicle = null;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _trip = trip;
+        _vehicle = vehicle;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
 
   Future<void> _toggleTrip() async {
-    setState(() => _busy = true);
-    // TODO: POST start/end to the backend and begin location streaming.
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
+    final trip = _trip;
+    if (trip == null || _busy) return;
 
+    setState(() => _busy = true);
     final wasRunning = _isRunning;
-    setState(() {
-      _busy = false;
-      _trip = _trip.copyWith(
-        status: wasRunning ? TripStatus.completed : TripStatus.inProgress,
-        startedAt: wasRunning ? null : DateTime.now(),
-        endedAt: wasRunning ? DateTime.now() : null,
-      );
-    });
-    context.showSnack(wasRunning ? 'Trip ended.' : 'Trip started.');
+
+    try {
+      final updated =
+          wasRunning ? await _tripsRepo.end(trip.id) : await _tripsRepo.start(trip.id);
+      if (!mounted) return;
+      setState(() {
+        _trip = updated;
+        _busy = false;
+      });
+      context.showSnack(wasRunning ? 'Trip ended.' : 'Trip started.');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      // A transition the server rejected (already started by a stale screen,
+      // say) is worth surfacing rather than silently reverting.
+      context.showSnack(e.message);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final trip = _trip;
+
     return Scaffold(
       appBar: AppBar(
         leading: Padding(
@@ -58,70 +120,88 @@ class _TripPageState extends State<TripPage> {
           ),
         ),
         title: Text(
-          _trip.direction == TripDirection.pickup ? 'Pickup run' : 'Drop-off run',
+          trip == null
+              ? 'Trip'
+              : trip.direction == TripDirection.pickup
+                  ? 'Pickup run'
+                  : 'Drop-off run',
         ),
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                children: [
-                  _StatusCard(trip: _trip),
-                  const SizedBox(height: 16),
-                  Row(
+      body: switch ((_loading, _error, trip)) {
+        (true, _, _) => const LoadingWidget(message: AppStrings.loading),
+        (false, String message, _) => EmptyState(
+            icon: Icons.wifi_off_rounded,
+            message: message,
+            onRetry: widget.tripId == null ? null : _load,
+          ),
+        (false, null, null) => const EmptyState(
+            icon: Icons.error_outline_rounded,
+            message: 'That run could not be found.',
+          ),
+        (false, null, Trip t) => SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                     children: [
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.people_outline_rounded,
-                          value: '${_trip.studentIds.length}',
-                          label: 'Students',
-                        ),
+                      _StatusCard(trip: t, vehicle: _vehicle),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.people_outline_rounded,
+                              value: '${t.studentIds.length}',
+                              label: 'Students',
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _StatCard(
+                              icon: Icons.schedule_rounded,
+                              value: t.elapsed?.compact ?? '--',
+                              label: 'Elapsed',
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _StatCard(
-                          icon: Icons.schedule_rounded,
-                          value: _trip.elapsed?.compact ?? '--',
-                          label: 'Elapsed',
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.people_outline_rounded, size: 20),
+                        label: const Text(AppStrings.students),
+                        onPressed: () => Navigator.of(context).pushNamed(
+                          AppRoutes.studentList,
+                          arguments: t.id,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    icon: const Icon(Icons.people_outline_rounded, size: 20),
-                    label: const Text(AppStrings.students),
-                    onPressed: () => Navigator.of(context).pushNamed(
-                      AppRoutes.studentList,
-                      arguments: _trip.id,
-                    ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  child: PrimaryButton(
+                    label: _isRunning ? AppStrings.endTrip : AppStrings.startTrip,
+                    icon:
+                        _isRunning ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    busy: _busy,
+                    danger: _isRunning,
+                    onPressed: _toggleTrip,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-              child: PrimaryButton(
-                label: _isRunning ? AppStrings.endTrip : AppStrings.startTrip,
-                icon: _isRunning ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                busy: _busy,
-                danger: _isRunning,
-                onPressed: _toggleTrip,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
+      },
     );
   }
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.trip});
+  const _StatusCard({required this.trip, required this.vehicle});
 
   final Trip trip;
+  final Vehicle? vehicle;
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +248,7 @@ class _StatusCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            DemoData.vehicle.displayName,
+            vehicle?.displayName ?? 'Vehicle not assigned',
             style: context.text.bodyMedium
                 ?.copyWith(color: AppColors.textSecondary),
           ),

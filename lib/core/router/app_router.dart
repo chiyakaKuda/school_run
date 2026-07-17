@@ -4,12 +4,12 @@ import '../../features/auth/change_password_page.dart';
 import '../../features/auth/login_page.dart';
 import '../../features/auth/signup_page.dart';
 import '../../features/auth/splash_page.dart';
-import '../../features/driver/driver_home.dart';
+import '../../features/driver/driver_shell.dart';
 import '../../features/driver/student_list_page.dart';
 import '../../features/driver/trip_page.dart';
 import '../../features/parent/live_tracking_page.dart';
 import '../../features/parent/notifications_page.dart';
-import '../../features/parent/parent_home.dart';
+import '../../features/parent/parent_shell.dart';
 import '../../features/profile/profile_page.dart';
 import '../../models/user.dart';
 
@@ -45,7 +45,7 @@ class AppRouter {
           ChangePasswordPage(forced: settings.arguments as bool? ?? false),
           settings,
         ),
-      AppRoutes.driverHome => _page(const DriverHome(), settings),
+      AppRoutes.driverHome => _page(const DriverShell(), settings),
       AppRoutes.trip => _page(
           TripPage(tripId: settings.arguments as String?),
           settings,
@@ -54,7 +54,7 @@ class AppRouter {
           StudentListPage(tripId: settings.arguments as String?),
           settings,
         ),
-      AppRoutes.parentHome => _page(const ParentHome(), settings),
+      AppRoutes.parentHome => _page(const ParentShell(), settings),
       AppRoutes.liveTracking => _page(
           LiveTrackingPage(studentId: settings.arguments as String?),
           settings,

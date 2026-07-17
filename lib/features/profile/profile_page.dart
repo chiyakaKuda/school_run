@@ -3,12 +3,19 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_strings.dart';
 import '../../core/router/app_router.dart';
+import '../../shared/widgets/app_shell.dart';
 import '../../shared/widgets/primary_button.dart';
 import '../../utils/extensions.dart';
 import '../auth/auth_provider.dart';
 
+/// [embedded] renders as a bottom-nav tab (no back chevron, a plain heading in
+/// its place) rather than a pushed screen with its own [AppBar] — see
+/// [ShellDestination] in `driver_shell.dart` / `parent_shell.dart`. The
+/// pushable route still works for anywhere else that wants to link to it.
 class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key});
+  const ProfilePage({super.key, this.embedded = false});
+
+  final bool embedded;
 
   Future<void> _confirmLogout(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -43,20 +50,26 @@ class ProfilePage extends StatelessWidget {
     final user = AuthScope.of(context).user;
 
     return Scaffold(
-      appBar: AppBar(
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: IconButton(
-            icon: const Icon(Icons.chevron_left_rounded),
-            onPressed: () => Navigator.of(context).maybePop(),
-          ),
-        ),
-        title: const Text(AppStrings.profile),
-      ),
+      appBar: embedded
+          ? null
+          : AppBar(
+              leading: Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: IconButton(
+                  icon: const Icon(Icons.chevron_left_rounded),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+              title: const Text(AppStrings.profile),
+            ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          padding: EdgeInsets.fromLTRB(20, embedded ? 20 : 12, 20, 24),
           children: [
+            if (embedded) ...[
+              Text(AppStrings.profile, style: context.text.headlineSmall),
+              const SizedBox(height: 20),
+            ],
             Column(
               children: [
                 CircleAvatar(
@@ -108,8 +121,16 @@ class ProfilePage extends StatelessWidget {
                 _Row(
                   icon: Icons.notifications_none_rounded,
                   label: AppStrings.notifications,
-                  onTap: () =>
-                      Navigator.of(context).pushNamed(AppRoutes.notifications),
+                  onTap: () {
+                    // Inside the shell, Notifications is a sibling tab — jump
+                    // to it rather than pushing a second copy of the screen.
+                    final shell = ShellScope.maybeOf(context);
+                    if (shell != null) {
+                      shell.goTo(1);
+                    } else {
+                      Navigator.of(context).pushNamed(AppRoutes.notifications);
+                    }
+                  },
                 ),
                 _Row(
                   icon: Icons.shield_outlined,

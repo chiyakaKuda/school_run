@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
-import '../../core/services/demo_data.dart';
+import '../../core/services/api_service.dart';
+import '../../core/services/drivers_repository.dart';
+import '../../core/services/students_repository.dart';
+import '../../core/services/trips_repository.dart';
+import '../../core/services/vehicles_repository.dart';
+import '../../models/driver_profile.dart';
+import '../../models/student.dart';
 import '../../models/trip.dart';
+import '../../models/vehicle.dart';
+import '../../shared/widgets/loading_widget.dart';
 import '../../utils/extensions.dart';
 
 /// Live vehicle position for a child's current trip.
@@ -21,12 +29,111 @@ class LiveTrackingPage extends StatefulWidget {
 }
 
 class _LiveTrackingPageState extends State<LiveTrackingPage> {
-  // TODO: subscribe to the trip's location stream (WebSocket or polling).
-  late final Trip _trip = DemoData.trips.first;
-  late final _student = DemoData.studentById(widget.studentId);
+  final StudentsRepository _studentsRepo = StudentsRepository.instance;
+  final TripsRepository _tripsRepo = TripsRepository.instance;
+  final DriversRepository _driversRepo = DriversRepository.instance;
+  final VehiclesRepository _vehiclesRepo = VehiclesRepository.instance;
+
+  Student? _student;
+  Trip? _trip;
+  DriverProfile? _driver;
+  Vehicle? _vehicle;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final studentId = widget.studentId;
+    if (studentId == null) {
+      setState(() {
+        _loading = false;
+        _error = 'No child was selected.';
+      });
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final student = await _studentsRepo.getById(studentId);
+
+      // The trip actually carrying this child today — not, as the previous
+      // fixture-backed version did, whichever trip happened to load first.
+      final trips = await _tripsRepo.list();
+      Trip? trip;
+      for (final t in trips) {
+        if (t.studentIds.contains(studentId)) {
+          trip = t;
+          if (t.isActive) break; // prefer a live run over a scheduled one
+        }
+      }
+
+      DriverProfile? driver;
+      Vehicle? vehicle;
+      if (trip != null) {
+        try {
+          driver = await _driversRepo.getById(trip.driverId);
+        } on ApiException {
+          driver = null;
+        }
+        try {
+          vehicle = await _vehiclesRepo.getById(trip.vehicleId);
+        } on ApiException {
+          vehicle = null;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _student = student;
+        _trip = trip;
+        _driver = driver;
+        _vehicle = vehicle;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.message;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: LoadingWidget());
+    }
+
+    final error = _error;
+    if (error != null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: IconButton(
+              icon: const Icon(Icons.chevron_left_rounded),
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
+        ),
+        body: EmptyState(
+          icon: Icons.wifi_off_rounded,
+          message: error,
+          onRetry: widget.studentId == null ? null : _load,
+        ),
+      );
+    }
+
     return Scaffold(
       body: Stack(
         children: [
@@ -55,7 +162,7 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                         borderRadius: BorderRadius.circular(AppRadius.pill),
                       ),
                       child: Text(
-                        _student.name,
+                        _student!.name,
                         style: context.text.labelMedium,
                       ),
                     ),
@@ -66,7 +173,11 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
 
           Align(
             alignment: Alignment.bottomCenter,
-            child: _TrackingSheet(trip: _trip),
+            child: _TrackingSheet(
+              trip: _trip,
+              driver: _driver,
+              vehicle: _vehicle,
+            ),
           ),
         ],
       ),
@@ -74,14 +185,22 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
   }
 }
 
-/// Bottom sheet: ETA banner, driver card, contact action.
+/// Bottom sheet: status banner, driver card, contact action.
 class _TrackingSheet extends StatelessWidget {
-  const _TrackingSheet({required this.trip});
+  const _TrackingSheet({
+    required this.trip,
+    required this.driver,
+    required this.vehicle,
+  });
 
-  final Trip trip;
+  final Trip? trip;
+  final DriverProfile? driver;
+  final Vehicle? vehicle;
 
   @override
   Widget build(BuildContext context) {
+    final running = trip?.isActive ?? false;
+
     return Container(
       width: double.infinity,
       decoration: const BoxDecoration(
@@ -95,91 +214,98 @@ class _TrackingSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ETA banner.
+            // Status banner. There is no ETA on the backend yet — the
+            // reference's "6 min" was a bare literal, not derived from
+            // anything — so this reports the trip's real state instead of a
+            // number that would always read the same regardless of reality.
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: AppColors.accent,
-                borderRadius: BorderRadius.vertical(
+              decoration: BoxDecoration(
+                color: running ? AppColors.accent : AppColors.surfaceVariant,
+                borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(AppRadius.sheet),
                 ),
               ),
               child: Row(
                 children: [
-                  Text(
-                    'The bus will arrive in',
-                    style: context.text.labelLarge
-                        ?.copyWith(color: AppColors.onAccent),
-                  ),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.onAccent.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                  if (running)
+                    Container(
+                      height: 8,
+                      width: 8,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: const BoxDecoration(
+                        color: AppColors.onAccent,
+                        shape: BoxShape.circle,
+                      ),
                     ),
-                    child: Text(
-                      '6 min',
-                      style: context.text.labelMedium
-                          ?.copyWith(color: AppColors.onAccent),
+                  Text(
+                    trip == null
+                        ? 'No run scheduled today'
+                        : running
+                            ? 'On the road now'
+                            : trip!.status.label,
+                    style: context.text.labelLarge?.copyWith(
+                      color: running
+                          ? AppColors.onAccent
+                          : AppColors.textSecondary,
                     ),
                   ),
                 ],
               ),
             ),
 
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: AppColors.surfaceVariant,
-                    child: Text(
-                      DemoData.driver.name.initials,
-                      style: context.text.titleMedium,
+            if (driver != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: AppColors.surfaceVariant,
+                      child: Text(
+                        driver!.name.initials,
+                        style: context.text.titleMedium,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(DemoData.driver.name,
-                            style: context.text.titleMedium),
-                        const SizedBox(height: 2),
-                        Text(
-                          DemoData.vehicle.model ?? '',
-                          style: context.text.bodySmall
-                              ?.copyWith(color: AppColors.textSecondary),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(driver!.name, style: context.text.titleMedium),
+                          const SizedBox(height: 2),
+                          Text(
+                            vehicle?.model ?? '',
+                            style: context.text.bodySmall
+                                ?.copyWith(color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (vehicle != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceVariant,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
                         ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceVariant,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                    ),
-                    child: Text(
-                      DemoData.vehicle.plateNumber,
-                      style: context.text.labelMedium,
-                    ),
-                  ),
-                ],
+                        child: Text(
+                          vehicle!.plateNumber,
+                          style: context.text.labelMedium,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
 
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
               child: Text(
-                trip.lastLocation == null
+                trip?.lastLocation == null
                     ? 'Waiting for the driver to start the trip…'
-                    : 'Location updated ${trip.lastLocation!.recordedAt.relative}',
+                    : 'Location updated ${trip!.lastLocation!.recordedAt.relative}',
                 style: context.text.bodySmall
                     ?.copyWith(color: AppColors.textSecondary),
               ),
@@ -194,9 +320,11 @@ class _TrackingSheet extends StatelessWidget {
                       icon: const Icon(Icons.chat_bubble_outline_rounded,
                           size: 18),
                       label: const Text('Message driver'),
-                      onPressed: () => context.showSnack(
-                        'Messaging is not wired up yet.',
-                      ),
+                      onPressed: driver == null
+                          ? null
+                          : () => context.showSnack(
+                                'Messaging is not wired up yet.',
+                              ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -206,8 +334,10 @@ class _TrackingSheet extends StatelessWidget {
                       minimumSize: const Size.square(58),
                     ),
                     icon: const Icon(Icons.phone_rounded),
-                    onPressed: () =>
-                        context.showSnack('Calling is not wired up yet.'),
+                    onPressed: driver?.phone == null
+                        ? null
+                        : () =>
+                            context.showSnack('Calling is not wired up yet.'),
                   ),
                 ],
               ),

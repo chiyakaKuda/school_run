@@ -33,8 +33,12 @@ class ApiConstants {
   static const String vehicles = '/vehicles';
   static const String trips = '/trips';
   static const String notifications = '/notifications';
+  static const String drivers = '/drivers';
 
   static String tripById(String id) => '$trips/$id';
+  static String tripLocation(String id) => '$trips/$id/location';
   static String studentById(String id) => '$students/$id';
   static String vehicleById(String id) => '$vehicles/$id';
+  static String notificationById(String id) => '$notifications/$id';
+  static String driverById(String id) => '$drivers/$id';
 }
